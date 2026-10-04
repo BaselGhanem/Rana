@@ -114,8 +114,8 @@
 
     .poster-layout{display:grid;grid-template-columns:minmax(0,1fr) 310px;gap:20px;align-items:start}
     .poster-stage{background:#e5eeee;border-radius:30px;padding:14px;display:grid;place-items:center;box-shadow:var(--shadow);overflow:hidden;min-height:0}
-    #posterPreview{width:min(100%,calc((100dvh - 220px) * .8023256));aspect-ratio:1104/1376;border-radius:20px;overflow:hidden;box-shadow:0 20px 60px rgba(24,61,72,.22);background:#fff;flex:none}
-    #posterPreview svg{display:block;width:100%;height:100%}
+    #posterPreview{width:min(100%,860px);max-height:calc(100dvh - 190px);aspect-ratio:1104/1376;border-radius:20px;overflow:hidden;box-shadow:0 20px 60px rgba(24,61,72,.22);background:#fff;flex:none;display:flex;align-items:center;justify-content:center}
+    #posterPreview img{display:block;width:100%;height:100%;object-fit:contain;object-position:center center;background:#fff}
     .final-actions{display:grid;gap:10px;position:sticky;top:94px}
     .final-actions .card{padding:18px}
     .final-actions h3{font-size:15px;margin:0 0 8px}
@@ -176,7 +176,7 @@
       .final-actions{grid-template-columns:1fr}
       .final-actions .card:first-child{grid-column:auto}
       .poster-stage{padding:6px;border-radius:20px}
-      #posterPreview{width:min(100%,calc((100dvh - 190px) * .8023256));border-radius:14px}
+      #posterPreview{width:min(100%,100%);max-height:none;border-radius:14px}
       .footer-tip{display:none}
       .footer-nav .btn{min-width:104px;padding-inline:12px}
     }
@@ -202,7 +202,7 @@
       <p class="hint">أدخلي اسم الطفل ليظهر داخل الصورة النهائية.</p>
       <div class="card">
         <label for="childNameInput" style="display:block;font-size:13px;font-weight:800;color:#46636e;margin-bottom:10px">اسم الطفل</label>
-        <input id="childNameInput" class="input" type="text" placeholder="مثال: محمد أحمد" autocomplete="off" />
+        <input id="childNameInput" class="input" type="text" maxlength="40" placeholder="مثال: محمد أحمد" autocomplete="off" />
       </div>
     </section>
 
@@ -374,8 +374,17 @@
   };
   const contactPhone = `0782478066`;
   const childNameLabel = () => (state.childName || ``).trim();
-  const allowedHours = [`08`,`09`];
+  const monthBounds = () => {
+    const y = Number(state.year);
+    const m = Number(state.month);
+    const last = new Date(y,m+1,0).getDate();
+    return {min:`${y}-${pad(m+1)}-01`,max:`${y}-${pad(m+1)}-${pad(last)}`};
+  };
+  const amHours = [`08`,`09`,`10`,`11`];
+  const pmHours = [`12`,`01`,`02`,`03`,`04`,`05`,`06`,`07`,`08`,`09`];
+  const allHours = [`08`,`09`,`10`,`11`,`12`,`01`,`02`,`03`,`04`,`05`,`06`,`07`];
   const allowedMinutes = [`00`,`30`];
+  const hoursForPeriod = period => period === `AM` ? amHours : period === `PM` ? pmHours : allHours;
   const splitTime24 = value => {
     if (!value) return {hour:``,minute:``,period:``};
     const [h,m] = String(value).split(`:`).map(Number);
@@ -385,7 +394,7 @@
   const composeTime24 = (hour,minute,period) => {
     if (!hour || !minute || !period) return ``;
     const hour12 = Number(hour);
-    if (!allowedHours.includes(pad(hour12)) || !allowedMinutes.includes(String(minute))) return ``;
+    if (!hoursForPeriod(period).includes(pad(hour12)) || !allowedMinutes.includes(String(minute))) return ``;
     const hour24 = (hour12 % 12) + (period === `PM` ? 12 : 0);
     return `${pad(hour24)}:${minute}`;
   };
@@ -398,7 +407,7 @@
     const {hour,minute,period} = splitTime24(value);
     return `<div class="time-control${compact ? ` compact` : ``}" data-time-control data-period="${period}" ${attrs}>
       <div class="time-selects">
-        <select class="time-select" data-time-hour aria-label="الساعة">${timeOptions(allowedHours,`الساعة`,hour)}</select>
+        <select class="time-select" data-time-hour aria-label="الساعة"${period ? `` : ` disabled`}>${timeOptions(hoursForPeriod(period),period ? `الساعة` : `اختاري AM/PM أولاً`,hour)}</select>
         <select class="time-select" data-time-minute aria-label="الدقائق">${timeOptions(allowedMinutes,`الدقائق`,minute)}</select>
       </div>
       <div class="period-toggle" role="group" aria-label="AM أو PM">
@@ -408,11 +417,21 @@
     </div>`;
   };
   const readTimeControl = control => composeTime24(control?.querySelector(`[data-time-hour]`)?.value, control?.querySelector(`[data-time-minute]`)?.value, control?.dataset.period || ``);
+  const refreshHourOptions = control => {
+    const select = control?.querySelector(`[data-time-hour]`);
+    if (!select) return;
+    const previous = select.value;
+    const period = control.dataset.period || ``;
+    const items = hoursForPeriod(period);
+    const keep = items.includes(previous) ? previous : ``;
+    select.disabled = !period;
+    select.innerHTML = timeOptions(items,period ? `الساعة` : `اختاري AM/PM أولاً`,keep);
+  };
   const validateTimeControl = (control,label=`الجلسات`) => {
     const hourSelect = control?.querySelector(`[data-time-hour]`);
     const minuteSelect = control?.querySelector(`[data-time-minute]`);
     if (!hourSelect?.value){
-      toast(`اختاري الساعة لوقت ${label}.`);
+      toast(`اختاري الساعة لوقت ${label} بين 8 ص و9 م.`);
       hourSelect?.focus();
       return ``;
     }
@@ -498,7 +517,7 @@
   function validateStep(index){
     const key = steps[index];
     if (key === `child`){
-      const name = (el.childNameInput.value || ``).trim();
+      const name = (el.childNameInput.value || ``).trim().slice(0,40);
       if (!name){ toast(`أدخلي اسم الطفل.`); el.childNameInput.focus(); return false; }
       state.childName = name;
     }
@@ -526,7 +545,22 @@
       }
       generateSchedule();
     }
-    if (key === `review` && !state.appointments.length){ toast(`أضف موعداً واحداً على الأقل.`); return false; }
+    if (key === `review`){
+      if (!state.appointments.length){ toast(`أضيفي موعداً واحداً على الأقل.`); return false; }
+      const bounds = monthBounds();
+      const seenDates = new Set();
+      for (let i=0;i<state.appointments.length;i++){
+        const row = state.appointments[i];
+        const date = parseDate(row.date);
+        if (!row.date || !date){ toast(`حددي تاريخ الموعد رقم ${i+1}.`); return false; }
+        if (row.date < bounds.min || row.date > bounds.max){ toast(`الموعد رقم ${i+1} يجب أن يكون داخل الشهر المختار.`); return false; }
+        if (date.getDay() === 5){ toast(`الموعد رقم ${i+1} يقع يوم الجمعة، والجمعة غير متاحة.`); return false; }
+        if (seenDates.has(row.date)){ toast(`يوجد تاريخ مكرر: ${displayDate(row.date)}.`); return false; }
+        seenDates.add(row.date);
+        const parts = splitTime24(row.time);
+        if (!row.time || composeTime24(parts.hour,parts.minute,parts.period) !== row.time){ toast(`حددي وقتاً صحيحاً للموعد رقم ${i+1}.`); return false; }
+      }
+    }
     return true;
   }
 
@@ -549,9 +583,10 @@
       el.schedule.innerHTML = `<div class="empty">لا توجد مواعيد.</div>`;
       return;
     }
+    const bounds = monthBounds();
     el.schedule.innerHTML = state.appointments.map((row,index) => `<div class="schedule-row" data-id="${row.id}">
       <div class="num">${pad(index+1)}</div>
-      <input class="mini-input" type="date" data-field="date" value="${row.date || ``}">
+      <input class="mini-input" type="date" data-field="date" min="${bounds.min}" max="${bounds.max}" value="${row.date || ``}">
       <div class="day-name">${dayName(row.date)}</div>
       ${timeControlMarkup(row.time || ``,`data-review-time="${row.id}"`,true)}
       <button class="delete" type="button" data-delete aria-label="حذف الموعد">×</button>
@@ -602,9 +637,9 @@
         <line x1="694" y1="${y+pillH*.2}" x2="694" y2="${y+pillH*.8}" stroke="#afd7d8" stroke-width="1.4"/>
         <text x="805" y="${cy + smallFont*.34}" text-anchor="middle" font-size="${smallFont}" font-weight="500" fill="#183b4d">${escapeXml(displayDate(row.date))}</text>
         <line x1="912" y1="${y+pillH*.2}" x2="912" y2="${y+pillH*.8}" stroke="#afd7d8" stroke-width="1.4"/>
-        <g transform="translate(946 ${cy})" stroke="#153d4b" stroke-width="2" fill="none" stroke-linecap="round"><circle r="10"/><path d="M0-5v6l4 2"/></g>
-        <text x="1008" y="${cy + font*.34}" text-anchor="middle" font-size="${font*.92}" font-weight="700" fill="#173746">${escapeXml(parts.digits)}</text>
-        <text x="1047" y="${cy + font*.34}" text-anchor="middle" font-size="${font*.82}" font-weight="700" fill="#173746">${escapeXml(parts.period)}</text>
+        <g transform="translate(942 ${cy})" stroke="#153d4b" stroke-width="2" fill="none" stroke-linecap="round"><circle r="10"/><path d="M0-5v6l4 2"/></g>
+        <text x="995" y="${cy + font*.34}" text-anchor="middle" font-size="${font*.92}" font-weight="700" fill="#173746">${escapeXml(parts.digits)}</text>
+        <text x="1035" y="${cy + font*.34}" text-anchor="middle" font-size="${font*.82}" font-weight="700" fill="#173746">${escapeXml(parts.period)}</text>
       </g>`;
     }).join(``);
 
@@ -613,11 +648,13 @@
     const monthEn = monthsEn[state.month];
     const year = state.year || ``;
     const childText = childNameLabel() ? `اسم الطفل: ${childNameLabel()}` : ``;
-    const childWidth = Math.max(250, Math.min(430, childText.length * 12 + 70));
-    const childX = 906 - childWidth;
+    const childFont = Math.max(14, 22 - Math.max(0, childText.length - 20) * .34);
+    const childWidth = Math.max(230, Math.min(420, childText.length * childFont * .58 + 58));
+    const childCenterX = 748;
+    const childX = childCenterX - childWidth / 2;
     const tableLine = rows.length > 1 ? `<line x1="${timelineX}" y1="${startY+rowH/2}" x2="${timelineX}" y2="${startY+(rows.length-1)*rowH+rowH/2}" stroke="#d2e4e4" stroke-width="2"/>` : ``;
 
-    return `<svg xmlns="http://www.w3.org/2000/svg" width="1104" height="1376" viewBox="0 0 1104 1376">
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="1104" height="1376" viewBox="0 0 1104 1376" preserveAspectRatio="xMidYMid meet">
       <defs>
         <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="9" stdDeviation="10" flood-color="#335660" flood-opacity=".14"/></filter>
         <linearGradient id="headerCover" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#fffdfa"/><stop offset="1" stop-color="#f8fbfa"/></linearGradient>
@@ -634,11 +671,11 @@
         </g>
         <text x="1038" y="112" text-anchor="end" font-size="78" font-weight="800" fill="#064d64">أ. رنا</text>
         <text x="1038" y="174" text-anchor="end" font-size="34" font-weight="700" fill="#0b536a">أخصائية نطق وتخاطب</text>
-        <text x="905" y="258" text-anchor="end" font-size="34" font-weight="700" fill="#117681">جدول جلسات شهر</text>
-        <text x="938" y="344" text-anchor="end" font-size="60" font-weight="800" fill="#073f55">${escapeXml(monthAr)}</text>
-        <text x="680" y="344" text-anchor="middle" font-size="56" font-weight="700" fill="#073f55">${escapeXml(year)}</text>
-        <text x="908" y="389" text-anchor="end" font-size="20" font-weight="500" fill="#4a626f">مواعيد جلسات طفلكم المقررة خلال شهر ${escapeXml(monthAr)}</text>
-        ${childText ? `<g filter="url(#softShadow)"><rect x="${childX}" y="405" width="${childWidth}" height="38" rx="19" fill="#ffffff" fill-opacity=".98"/><text x="${childX + childWidth/2}" y="431" text-anchor="middle" font-size="22" font-weight="800" fill="#0b536a">${escapeXml(childText)}</text></g>` : ``}
+        <text x="750" y="258" text-anchor="middle" font-size="34" font-weight="700" fill="#117681">جدول جلسات شهر</text>
+        <text class="poster-year" x="575" y="344" text-anchor="middle" font-size="54" font-weight="700" fill="#073f55">${escapeXml(year)}</text>
+        <text class="poster-month" x="795" y="344" text-anchor="middle" font-size="58" font-weight="800" fill="#073f55">${escapeXml(monthAr)}</text>
+        <text x="750" y="389" text-anchor="middle" font-size="19" font-weight="500" fill="#4a626f">مواعيد جلسات طفلكم المقررة خلال شهر ${escapeXml(monthAr)}</text>
+        ${childText ? `<g class="poster-child" filter="url(#softShadow)"><rect x="${childX}" y="405" width="${childWidth}" height="38" rx="19" fill="#ffffff" fill-opacity=".98"/><text x="${childCenterX}" y="431" text-anchor="middle" font-size="${childFont}" font-weight="800" fill="#0b536a">${escapeXml(childText)}</text></g>` : ``}
       </g>
 
       <rect x="922" y="218" width="164" height="178" rx="30" fill="#fbfdfb"/>
@@ -654,14 +691,21 @@
       ${tableLine}
       ${rowSvg || `<text x="745" y="700" text-anchor="middle" font-family="Almarai,Tahoma,Arial,sans-serif" font-size="28" font-weight="700" fill="#6e8a94">لا توجد مواعيد</text>`}
       <g font-family="Almarai,Tahoma,Arial,sans-serif" filter="url(#softShadow)">
-        <rect x="374" y="1304" width="356" height="42" rx="21" fill="#fffdf8" fill-opacity=".92"/>
-        <text x="552" y="1332" text-anchor="middle" font-size="23" font-weight="800" fill="#0b536a">للتواصل: <tspan direction="ltr" unicode-bidi="embed">${escapeXml(contactPhone)}</tspan></text>
+        <rect x="337" y="1304" width="430" height="42" rx="21" fill="#fffdf8" fill-opacity=".92"/>
+        <text x="680" y="1332" text-anchor="end" font-size="23" font-weight="800" fill="#0b536a">للتواصل</text>
+        <text x="692" y="1332" text-anchor="middle" font-size="23" font-weight="800" fill="#0b536a">:</text>
+        <text x="402" y="1332" text-anchor="start" font-family="Arial,Tahoma,sans-serif" font-size="22" font-weight="800" fill="#0b536a" direction="ltr">${escapeXml(contactPhone)}</text>
       </g>
     </svg>`;
   }
 
+  function svgDataUri(svg){
+    return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+  }
+
   function renderPoster(){
-    el.posterPreview.innerHTML = posterSvg();
+    const svg = posterSvg();
+    el.posterPreview.innerHTML = `<img alt="معاينة الصورة النهائية" src="${svgDataUri(svg)}">`;
   }
 
   async function downloadPoster(){
@@ -740,6 +784,7 @@
       if (!control) return;
       control.dataset.period = periodButton.dataset.periodChoice;
       control.querySelectorAll(`[data-period-choice]`).forEach(button => button.classList.toggle(`selected`,button === periodButton));
+      refreshHourOptions(control);
       const value = readTimeControl(control);
       if (control.hasAttribute(`data-single-time`)) state.singleTime = value;
       if (control.hasAttribute(`data-day-time`)) state.weekdayTimes[control.dataset.dayTime] = value;
@@ -748,12 +793,27 @@
         if (row) row.time = value;
       }
     });
-    el.schedule.addEventListener(`input`, event => {
+    el.schedule.addEventListener(`change`, event => {
       const rowEl = event.target.closest(`[data-id]`);
       if (!rowEl) return;
       const row = state.appointments.find(item => item.id === rowEl.dataset.id);
       if (!row) return;
-      if (event.target.dataset.field === `date`) row.date = event.target.value;
+      if (event.target.dataset.field === `date`){
+        const value = event.target.value;
+        const date = parseDate(value);
+        const bounds = monthBounds();
+        if (value && (value < bounds.min || value > bounds.max)){
+          toast(`اختاري تاريخاً داخل الشهر المحدد.`);
+          event.target.value = row.date || ``;
+          return;
+        }
+        if (date && date.getDay() === 5){
+          toast(`الجمعة غير متاحة للجلسات.`);
+          event.target.value = row.date || ``;
+          return;
+        }
+        row.date = value;
+      }
       const dayEl = rowEl.querySelector(`.day-name`);
       if (dayEl) dayEl.textContent = dayName(row.date);
     });
